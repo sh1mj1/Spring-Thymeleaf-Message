@@ -136,4 +136,162 @@ spring.messages.basename=messages,config.i18n.messages
 
 `/resources/messages.properties`
 
+```java
+hello=안녕
+hello.name=안녕 {0}
+```
+
 `/resources/messages_en.properties`
+
+```java
+hello=hello
+hello.name=hello {0}
+```
+
+# 4. 스프링 메시지 소스 사용
+
+`MessageSource` 인터페이스
+
+```java
+public interface MessageSource {
+		String getMessage(String code, @Nullable Object[] args, @Nullable String defaultMessage, Locale locale);
+		String getMessage(String code, @Nullable Object[] args, Locale locale) throws NoSuchMessageException;
+```
+
+`test/java/hello/itemservice/message.MessageSourceTest.java`
+
+```java
+package hello.itemservice.message;
+
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.MessageSource;
+
+import static org.assertj.core.api.Assertions.*;
+
+@SpringBootTest
+public class MessageSourceTest {
+
+    @Autowired
+    MessageSource ms;
+
+    @Test
+    void helloMessage(){
+        String result = ms.getMessage("hello", null, null);
+        assertThat(result).isEqualTo("안녕");
+    }
+}
+```
+
+`ms.getMessage("hello", null, null)`
+
+- **code** : hello
+- **agrs** : null
+- **locale** : null
+
+가장 단순한 테스트로 메시지 코드로 `hello` 를 입력하고 나머지 값은 `null` 을 입력했다. 
+
+`locale` 정보가 없으면 `basename` 에서 설정한 기본 이름 메시지 파일을 조회한다.
+
+`basename` 으로 `messages` 를 지정 했으므로 `messages.properties` 파일에서 데이터 조회한다
+
+일반적으로는 다들 테스트가 성공할 것입니다! 
+
+### 테스트 실패시
+
+제 기본 OS 는 en_Kor 이어서 테스트를 계속 실패하네요…  이 경우에 아래의 절차를 따르면 됩니다.
+
+테스트 전에 `Locale.setDefault(Locale.KOREA)`; 를 추가하면 기본 Locale 을 한시적으로 ko_KR 로 변경할 수 있습니다
+
+그렇게 변경을 하고 테스트를 진행하는데도 **excepted가 ??** 로 뜨면서 테스트를 실패할 수도 있습니다.
+
+그 경우 아래 사진처럼 File Encodings 을 UTF-8 로 설정하고 IntelliJ 을 다시 시작합니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/d3ec3337-24c3-417b-87ad-be83710233df/Untitled.png)
+
+그렇게 했는데도 실패할 수도 있습니다. 그렇다면  아래의 순서로 처리합니다.
+
+Help → "Edit Custom VM options" 를 선택합니다. 그후 아래의 인코딩 옵션을 추가해줍니다.
+
+```java
+-Dfile.encoding=UTF-8
+-Dconsole.encoding=UTF-8
+```
+
+설정 후 File → Invalidate Caches 을 선택하여 캐시를 삭제하고 IntelliJ 을 다시시작합니다.
+
+위 절차에 따르면 모두 해결될 것입니다.
+
+`MessageSourceTest` 추가 - 메시지가 없는 경우, 기본 메시지
+
+```java
+@Test
+void notFoundMessageCode() {
+    Locale.setDefault(Locale.KOREA);
+    assertThatThrownBy(() -> ms.getMessage("no_code", null, Locale.KOREA))
+            .isInstanceOf(NoSuchMessageException.class);
+}
+
+@Test
+void notFoundMessageCodeDefaultMessage() {
+    Locale.setDefault(Locale.KOREA);
+    String result = ms.getMessage("no_code", null, "기본 메시지", null);
+    assertThat(result).isEqualTo("기본 메시지");
+}
+```
+
+- 메시지가 없는 경우에는 `NoSuchMessageException` 이 발생한다.
+- 메시지가 없어도 기본 메시지( `defaultMessage` )를 사용하면 기본 메시지가 반환된다.
+
+`MessageSourceTest` 추가 - 매개변수 사용
+
+```java
+@Test
+void argumentMessage() {
+    Locale.setDefault(Locale.KOREA);
+    String result = ms.getMessage("hello.name", new Object[]{"Spring"}, null);
+    assertThat(result).isEqualTo("안녕 Spring");
+}
+```
+
+다음 메시지의 {0} 부분은 매개변수를 전달해서 치환할 수 있다.
+
+`hello.name=안녕 {0}` Spring 단어를 매개변수로 전달 `안녕 Spring`
+
+### 국제화 파일 선택
+
+locale 정보를 기반으로 국제화 파일을 선택한다.
+
+- Locale이 `en_US` 의 경우 `messages_en_US` → `messages_en` → `messages` 순서로 찾는다.
+- `Locale` 에 맞추어 구체적인 것이 있으면 구체적인 것을 찾고, 없으면 디폴트를 찾는다고 이해하면 된다.
+
+`MessageSourceTest` 추가 - 국제화 파일 선택1
+
+```java
+@Test
+void defaultLang(){
+    Locale.setDefault(Locale.KOREA);
+    assertThat(ms.getMessage("hello", null, null)).isEqualTo("안녕");
+    assertThat(ms.getMessage("hello", null, Locale.KOREA)).isEqualTo("안녕");
+}
+```
+
+- `ms.getMessage("hello", null, null)` : locale 정보가 없으므로 `Locale.getDefault()` 을 호출해서 시스템의 기본 로케일을 사용합니다.
+    - 예) locale = null 인 경우 시스템 기본 locale 이 ko_KR 이므로 `messages_ko.properties` 조회 시도 조회 실패 `messages.properties` 조회
+
+- `ms.getMessage("hello", null, Locale.KOREA)` : locale 정보가 있지만, `message_ko` 가 없으므로 messages 을 사용
+
+`MessageSourceTest` 추가 - 국제화 파일 선택2
+
+```java
+@Test
+void enLang(){
+    Locale.setDefault(Locale.KOREA);
+    assertThat(ms.getMessage("hello", null, Locale.ENGLISH)).isEqualTo("hello");
+}
+```
+
+- `ms.getMessage("hello", null, Locale.ENGLISH)` : locale 정보가 `Locale.ENGLISH` 이므로 `messages_en` 을 찾아서 사용
+
